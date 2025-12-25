@@ -373,12 +373,12 @@ router.get('/get/creator/detail/feed/:feedId', auth, getUserInfoAssociatedFeed);
 router.get('/get/user/hide/post', auth, getUserHidePost);
 
 
-router.post('/user/get/post', getUserPost);
+router.post('/user/get/post', auth, getUserPost);
 router.get('/user/get/feed/category', auth, getFeedLanguageCategories);
 router.get('/user/get/all/category', getUserPostCategories);
 
 router.get("/get/hidden-posts", auth, getHiddenPosts);
-router.post("/remove/hidden-post",auth,removeHiddenPost);
+router.post("/remove/hidden-post", auth, removeHiddenPost);
 
 /* --------------------- User Follower API --------------------- */
 router.post('/user/follow/creator', auth, followAccount);
@@ -386,8 +386,8 @@ router.post('/user/unfollow/creator', auth, unFollowAccount);
 router.get('/user/following/data', auth, getUserFollowersData);
 router.post('/user/remove/follower', auth, removeFollower);
 
-router.post("/individual/user/following",auth, getUserFollowing);
-router.post("/individual/user/followers",auth, getUserFollowers);
+router.post("/individual/user/following", auth, getUserFollowing);
+router.post("/individual/user/followers", auth, getUserFollowers);
 
 
 /* --------------------- User Notifiction API --------------------- */

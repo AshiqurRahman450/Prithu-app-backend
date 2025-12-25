@@ -367,13 +367,13 @@ exports.getfeedWithCategoryWithId = async (req, res) => {
         },
       },
 
-      // 🔹 Current user actions
+      // 🔹 Current user actions - FIX: Convert userId to ObjectId for proper comparison
       {
         $lookup: {
           from: "UserFeedActions",
           let: { feedId: "$_id" },
           pipeline: [
-            { $match: { $expr: { $eq: ["$userId", userId] } } },
+            { $match: { $expr: { $eq: ["$userId", new mongoose.Types.ObjectId(userId)] } } },
             {
               $project: {
                 isLiked: {

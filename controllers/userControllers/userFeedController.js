@@ -640,19 +640,20 @@ exports.getUserdetailWithinTheFeed = async (req, res) => {
 
 exports.getUserPost = async (req, res) => {
   try {
-    const userId = req.body.profileUserId || req.body.currentUserId;
+    const profileUserId = req.body.profileUserId || req.body.currentUserId;
+    const currentUserId = req.Id; // Current user making the request (from auth token)
 
-    if (!userId) {
+    if (!profileUserId) {
       return res.status(400).json({ message: "User ID is required" });
     }
 
-    const creatorId = userId;
+    const creatorId = profileUserId;
 
     // ✅ Run feed fetching and count in parallel
     const [feeds, feedCount] = await Promise.all([
       Feed.find(
         { createdByAccount: creatorId },
-        { contentUrl: 1, createdAt: 1 }
+        { contentUrl: 1, createdAt: 1, caption: 1, tags: 1, background: 1, type: 1, themeColor: 1 }
       )
         .sort({ createdAt: -1 })
         .lean(),
@@ -667,8 +668,35 @@ exports.getUserPost = async (req, res) => {
       });
     }
 
-    // ✅ Get feedIds for like count lookup
+    // ✅ Get feedIds for lookups
     const feedIds = feeds.map(feed => feed._id);
+
+    // ✅ Get current user's actions (if logged in) - to determine isLiked, isSaved, isDisliked
+    let userActions = null;
+    console.log('🔍 DEBUG getUserPost - currentUserId from token:', currentUserId);
+
+    if (currentUserId) {
+      userActions = await UserFeedActions.findOne({ userId: currentUserId }).lean();
+      console.log('🔍 DEBUG getUserPost - userActions found:', userActions ? 'YES' : 'NO');
+      if (userActions) {
+        console.log('🔍 DEBUG getUserPost - likedFeeds count:', userActions.likedFeeds?.length || 0);
+        console.log('🔍 DEBUG getUserPost - savedFeeds count:', userActions.savedFeeds?.length || 0);
+        console.log('🔍 DEBUG getUserPost - disLikeFeeds count:', userActions.disLikeFeeds?.length || 0);
+      }
+    } else {
+      console.log('⚠️ DEBUG getUserPost - No currentUserId (user not authenticated or token missing)');
+    }
+
+    // Create lookup sets for O(1) checking
+    const likedFeedIds = new Set(
+      (userActions?.likedFeeds || []).map(f => f.feedId?.toString())
+    );
+    const savedFeedIds = new Set(
+      (userActions?.savedFeeds || []).map(f => f.feedId?.toString())
+    );
+    const dislikedFeedIds = new Set(
+      (userActions?.disLikeFeeds || []).map(f => f.feedId?.toString())
+    );
 
     // ✅ Aggregate like counts for each feed
     const likeCounts = await UserFeedActions.aggregate([
@@ -682,19 +710,66 @@ exports.getUserPost = async (req, res) => {
       },
     ]);
 
-    // Convert to a lookup map for faster access
+    // ✅ Aggregate dislike counts for each feed
+    const dislikeCounts = await UserFeedActions.aggregate([
+      { $unwind: "$disLikeFeeds" },
+      { $match: { "disLikeFeeds.feedId": { $in: feedIds } } },
+      {
+        $group: {
+          _id: "$disLikeFeeds.feedId",
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    // ✅ Get comment counts for each feed
+    const commentCounts = await UserComment.aggregate([
+      { $match: { feedId: { $in: feedIds } } },
+      {
+        $group: {
+          _id: "$feedId",
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    // Convert to lookup maps for faster access
     const likeCountMap = {};
     likeCounts.forEach(item => {
       likeCountMap[item._id.toString()] = item.count;
     });
 
-    // ✅ Format feeds with like count + time ago
-    const feedsFormatted = feeds.map(feed => ({
-      feedId: feed._id,
-      contentUrl: feed.contentUrl,
-      timeAgo: feedTimeCalculator(feed.createdAt),
-      likeCount: likeCountMap[feed._id.toString()] || 0,
-    }));
+    const dislikeCountMap = {};
+    dislikeCounts.forEach(item => {
+      dislikeCountMap[item._id.toString()] = item.count;
+    });
+
+    const commentCountMap = {};
+    commentCounts.forEach(item => {
+      commentCountMap[item._id.toString()] = item.count;
+    });
+
+    // ✅ Format feeds with all required fields
+    const feedsFormatted = feeds.map(feed => {
+      const feedIdStr = feed._id.toString();
+      return {
+        feedId: feed._id,
+        contentUrl: feed.contentUrl,
+        timeAgo: feedTimeCalculator(feed.createdAt),
+        likeCount: likeCountMap[feedIdStr] || 0,
+        likesCount: likeCountMap[feedIdStr] || 0, // alias for consistency
+        dislikesCount: dislikeCountMap[feedIdStr] || 0,
+        commentsCount: commentCountMap[feedIdStr] || 0,
+        isLiked: likedFeedIds.has(feedIdStr),
+        isSaved: savedFeedIds.has(feedIdStr),
+        isDisliked: dislikedFeedIds.has(feedIdStr),
+        caption: feed.caption || '',
+        tags: feed.tags || [],
+        background: feed.background || '#fff',
+        type: feed.type || 'image',
+        themeColor: feed.themeColor || null,
+      };
+    });
 
     return res.status(200).json({
       message: "Creator feeds retrieved successfully",
