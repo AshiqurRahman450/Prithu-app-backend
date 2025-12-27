@@ -63,12 +63,15 @@ exports.getUserFollowing = async (req, res) => {
 exports.getUserFollowers = async (req, res) => {
   try {
     const userId = req.body.userId || req.Id || req.query.id;
-    console.log("getUserFollowers for userId:", userId)
+    const currentUserId = req.Id; // The logged-in user making the request
+    console.log("getUserFollowers for userId:", userId, "currentUserId:", currentUserId);
+
     if (!userId) {
       return res.status(400).json({ success: false, message: "User ID required" });
     }
 
     const userObjectId = new mongoose.Types.ObjectId(userId);
+    const currentUserObjectId = currentUserId ? new mongoose.Types.ObjectId(currentUserId) : null;
 
     // 1️⃣ Find all followers
     const followers = await CreatorFollower.find(
@@ -89,15 +92,27 @@ exports.getUserFollowers = async (req, res) => {
       { userId: 1, userName: 1, displayName: 1, profileAvatar: 1 }
     ).lean();
 
-    // 4️⃣ Combine profile + follow time
+    // 4️⃣ Check which followers the current user is following
+    let currentUserFollowing = [];
+    if (currentUserObjectId) {
+      const followingRecords = await CreatorFollower.find(
+        { followerId: currentUserObjectId, creatorId: { $in: followerIds } },
+        { creatorId: 1 }
+      ).lean();
+      currentUserFollowing = followingRecords.map(f => f.creatorId.toString());
+    }
+
+    // 5️⃣ Combine profile + follow time + isFollowing status
     const result = followers.map(f => {
       const profile = profiles.find(p => p.userId.toString() === f.followerId.toString());
+      const isFollowing = currentUserFollowing.includes(f.followerId.toString());
       return {
         userId: f.followerId,
         userName: profile?.userName || "Unknown",
         displayName: profile?.displayName || "",
         profileAvatar: profile?.profileAvatar || "",
         followedAt: feedTimeCalculator(f.createdAt),
+        isFollowing: isFollowing, // Whether current user follows this follower
       };
     });
 

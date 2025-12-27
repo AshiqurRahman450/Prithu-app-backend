@@ -6,8 +6,8 @@ const cookieParser = require("cookie-parser");
 const path = require("path");
 const http = require("http");
 const startCrons = require("./corn/index");
-const jobRoot=require("./roots/jobPostRoot");
-const webRoot=require("./roots/webroot");
+const jobRoot = require("./roots/jobPostRoot");
+const webRoot = require("./roots/webroot");
 const root = require("./roots/root");
 const { initSocket } = require("./middlewares/webSocket");
 require('./db')
@@ -24,7 +24,7 @@ const io = initSocket(server);
 // CORS
 app.use(
   cors({
-    origin: true, 
+    origin: true,
     credentials: true, // Allow cookies, authorization headers, etc.
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allowedHeaders: ["Content-Type", "Authorization"],
@@ -36,7 +36,17 @@ app.use(
 app.use(express.json());
 app.use(cookieParser());
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-app.use("/web/job",jobRoot);
+
+// Server health check / hello route
+app.get("/", (req, res) => {
+  res.json({
+    message: "Hello! Backend is running 🚀",
+    status: "active",
+    timestamp: new Date().toISOString()
+  });
+});
+
+app.use("/web/job", jobRoot);
 app.use("/api", root);
 app.use("/web/api", webRoot);
 
